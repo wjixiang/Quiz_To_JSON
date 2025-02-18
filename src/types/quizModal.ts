@@ -14,6 +14,9 @@ const analysisSchema = new mongoose.Schema({
 
 const A1Schema = new mongoose.Schema({
     type: { type: String, enum: ["A1"], required: true },
+    class: {type: String},
+    unit: {typs: String},
+    tags: {type: [String]},
     question: { type: String, required: true },
     options: [optionSchema],
     answer: { type: String, enum: ["A", "B", "C", "D", "E"], required: true },
@@ -22,6 +25,9 @@ const A1Schema = new mongoose.Schema({
 
 const A2Schema = new mongoose.Schema({
     type: { type: String, enum: ["A2"], required: true },
+    class: {type: String},
+    unit: {typs: String},
+    tags: {type: [String]},
     question: { type: String, required: true },
     options: [optionSchema],
     answer: { type: String, enum: ["A", "B", "C", "D", "E"], required: true },
@@ -30,6 +36,9 @@ const A2Schema = new mongoose.Schema({
 
 const A3Schema = new mongoose.Schema({
     type: { type: String, enum: ["A3"], required: true },
+    class: {type: String},
+    unit: {typs: String},
+    tags: {type: [String]},
     mainQuestion: { type: String, required: true },
     subQuizs: [{
         subQuizId: { type: Number, required: true },
@@ -42,6 +51,9 @@ const A3Schema = new mongoose.Schema({
 
 const XSchema = new mongoose.Schema({
     type: { type: String, enum: ["X"], required: true },
+    class: {type: String},
+    unit: {typs: String},
+    tags: {type: [String]},
     question: { type: String, required: true },
     options: [optionSchema],
     answer: [{ type: String, enum: ["A", "B", "C", "D", "E"], required: true }],
@@ -50,6 +62,9 @@ const XSchema = new mongoose.Schema({
 
 const BSchema = new mongoose.Schema({
     type: { type: String, enum: ["B"], required: true },
+    class: {type: String},
+    unit: {typs: String},
+    tags: {type: [String]},
     questions: [{
         questionId: { type: Number, required: true },
         questionText: { type: String, required: true },

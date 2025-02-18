@@ -8,6 +8,9 @@ interface analysis {
 
 export interface A1 {
     type: "A1";
+    class: string;
+    unit: string;
+    tags: string[];
     question: string;
     options: {oid: oid, text: string}[];
     answer: oid;
@@ -16,6 +19,9 @@ export interface A1 {
 
 export interface A2 {
     type: "A2";
+    class: string;
+    unit: string;
+    tags: string[];
     question: string;
     options: {oid: oid, text: string}[];
     answer: oid;
@@ -23,6 +29,9 @@ export interface A2 {
 }
 export interface A3 {
     type: "A3";
+    class: string;
+    unit: string;
+    tags: string[];
     mainQuestion: string;
     subQuizs: {
         subQuizId: number;
@@ -35,6 +44,9 @@ export interface A3 {
 
 export interface X {
     type: "X";
+    class: string;
+    unit: string;
+    tags: string[];
     question: string;
     options: {oid: oid, text: string}[];
     answer: oid[];
@@ -43,6 +55,9 @@ export interface X {
 
 export interface B {
     type: "B";
+    class: string;
+    unit: string;
+    tags: string[];
     questions: {
         questionId: number;
         questionText: string;

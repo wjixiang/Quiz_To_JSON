@@ -25,6 +25,7 @@ const analysisSchema = z.object({
 // 定义 A1 的 Zod schema
 const A1Schema = z.object({
     type: z.literal("A1"),
+    class: z.string(),
     question: z.string(),
     options: z.array(optionSchema),
     answer: z.enum(["A", "B", "C", "D", "E"]),
@@ -34,6 +35,7 @@ const A1Schema = z.object({
 // 定义 A2 的 Zod schema
 const A2Schema = z.object({
     type: z.literal("A2"),
+    class: z.string(),
     question: z.string(),
     options: z.array(optionSchema),
     answer: z.enum(["A", "B", "C", "D", "E"]),
@@ -43,6 +45,7 @@ const A2Schema = z.object({
 // 定义 A3 的 Zod schema
 const A3Schema = z.object({
     type: z.literal("A3"),
+    class: z.string(),
     mainQuestion: z.string(),
     subQuizs: z.array(z.object({
         subQuizId: z.number(),
@@ -56,6 +59,7 @@ const A3Schema = z.object({
 // 定义 X 的 Zod schema
 const XSchema = z.object({
     type: z.literal("X"),
+    class: z.string(),
     question: z.string(),
     options: z.array(optionSchema),
     answer: z.array(z.enum(["A", "B", "C", "D", "E"])),
@@ -65,6 +69,7 @@ const XSchema = z.object({
 // 定义 B 的 Zod schema
 const BSchema = z.object({
     type: z.literal("B"),
+    class: z.string(),
     questions: z.array(z.object({
         questionId: z.number(),
         questionText: z.string(),
@@ -123,57 +128,143 @@ export class synchronizer {
     }
 
 
-    start = async () => {  
-        const abnormalFiles = []
-        try {  
-            await this.initDatabase();  
-            const files = await fs.readdir(this.local_json_quiz_dir);  
-
-            // 初始化进度条  
-            const bar = new ProgressBar('同步进度 [:bar] :current/:total (:percent) - :eta秒剩余', {  
-                total: files.length,  
-                width: 40,  
-                complete: '=',  
-                incomplete: ' ',  
-                renderThrottle: 100  
-            });  
-
-            let completed = 0;  
-            const limiter = new Bottleneck({  
-                maxConcurrent: 50,  
-                minTime: 100  
-            });  
-
-            const promises = files.map(file =>  
-                limiter.schedule(async () => {  
-                    try {  
-                        const quizdata = await this.loadJSON(file);  
-                        const quiz = this.convert(quizdata);  
-                        if (quiz) {  
-                            try {
-                                this.sync(quiz);  
-                            } catch (error) {
-                                console.log(`sync error:`, error)
-                            }
+        // 批量处理大小  
+        private readonly BATCH_SIZE = 1000;  
+        // 并发数  
+        private readonly CONCURRENT_BATCHES = 5;  
+    
+        start = async () => {  
+            const abnormalFiles: { file: string; error: string }[] = [];  
+            try {  
+                await this.initDatabase();  
+    
+                // 只处理 JSON 文件  
+                const files = (await fs.readdir(this.local_json_quiz_dir))  
+                    .filter(file => file.endsWith('.json'));  
+    
+                // 初始化进度条  
+                const bar = new ProgressBar('同步进度 [:bar] :current/:total (:percent) - :eta秒剩余', {  
+                    total: files.length,  
+                    width: 40,  
+                    complete: '=',  
+                    incomplete: ' ',  
+                    renderThrottle: 100  
+                });  
+    
+                // 将文件分成批次  
+                const batches = this.chunks(files, this.BATCH_SIZE);  
+    
+                // 使用 Bottleneck 限制并发  
+                const limiter = new Bottleneck({  
+                    maxConcurrent: this.CONCURRENT_BATCHES,  
+                    minTime: 1000 // 每批次最小间隔时间  
+                });  
+    
+                // 处理每个批次  
+                for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {  
+                    const batch = batches[batchIndex];  
+                    await limiter.schedule(async () => {  
+                        const batchData = {  
+                            a1: [] as A1[],  
+                            a2: [] as A2[],  
+                            a3: [] as A3[],  
+                            b: [] as B[],  
+                            x: [] as X[]  
+                        };  
+    
+                        // 处理批次中的每个文件  
+                        for (const file of batch) {  
+                            try {  
+                                const quizdata = await this.loadJSON(file);  
+                                const quiz = this.convert(quizdata);  
+                                if (quiz) {  
+                                    // 按类型分组  
+                                    switch (quiz.type) {  
+                                        case 'A1':  
+                                            batchData.a1.push(quiz);  
+                                            break;  
+                                        case 'A2':  
+                                            batchData.a2.push(quiz);  
+                                            break;  
+                                        case 'A3':  
+                                            batchData.a3.push(quiz);  
+                                            break;  
+                                        case 'B':  
+                                            batchData.b.push(quiz);  
+                                            break;  
+                                        case 'X':  
+                                            batchData.x.push(quiz);  
+                                            break;  
+                                    }  
+                                }  
+                                bar.tick();  
+                            } catch (error) {  
+                                abnormalFiles.push({  
+                                    file,  
+                                    error: error instanceof Error ? error.message : String(error)  
+                                });  
+                            }  
                         }  
-                        completed++;  
-                        bar.tick();  
-                    } catch (error) {  
-                        console.error(`Error processing file ${file}:`, error);  
-                    }  
-                })  
-            );  
-
-            await Promise.all(promises);  
-            
-            console.log('\n同步完成！');  
-            await mongoose.connection.close();  
-            console.log('数据库连接已关闭');  
-        } catch (error) {  
-            console.error('Error:', error);  
-            await mongoose.connection.close();  
+    
+                        // 批量插入数据  
+                        await this.batchSync(batchData);  
+                    });  
+                }  
+    
+                console.log('\n同步完成！');  
+                if (abnormalFiles.length > 0) {  
+                    console.log('处理失败的文件：', abnormalFiles);  
+                }  
+                await mongoose.connection.close();  
+                console.log('数据库连接已关闭');  
+            } catch (error) {  
+                console.error('Error:', error);  
+                await mongoose.connection.close();  
+            }  
+        };  
+    
+        // 辅助方法：将数组分成小块  
+        private chunks<T>(array: T[], size: number): T[][] {  
+            const chunks: T[][] = [];  
+            for (let i = 0; i < array.length; i += size) {  
+                chunks.push(array.slice(i, i + size));  
+            }  
+            return chunks;  
         }  
-    }  
+    
+        // 批量同步数据到数据库  
+        private async batchSync(batchData: {  
+            a1: A1[];  
+            a2: A2[];  
+            a3: A3[];  
+            b: B[];  
+            x: X[];  
+        }) {  
+            const operations = [];  
+    
+            if (batchData.a1.length > 0) {  
+                operations.push(modal.a1.insertMany(batchData.a1, { ordered: false }));  
+            }  
+            if (batchData.a2.length > 0) {  
+                operations.push(modal.a2.insertMany(batchData.a2, { ordered: false }));  
+            }  
+            if (batchData.a3.length > 0) {  
+                operations.push(modal.a3.insertMany(batchData.a3, { ordered: false }));  
+            }  
+            if (batchData.b.length > 0) {  
+                operations.push(modal.b.insertMany(batchData.b, { ordered: false }));  
+            }  
+            if (batchData.x.length > 0) {  
+                operations.push(modal.x.insertMany(batchData.x, { ordered: false }));  
+            }  
+    
+            try {  
+                await Promise.all(operations);  
+            } catch (error) {  
+                console.error('Batch sync error:', error);  
+                throw error;  
+            }  
+        }    
 
 
     oidConvert = (index: number) => {
@@ -200,6 +291,9 @@ export class synchronizer {
                 case "A1":
                     quiz = {
                         type: "A1",
+                        class: quizdata.cls,
+                        unit: quizdata.unit,
+                        tags: [],
                         question: quizdata.test,
                         options: quizdata.option.map((value, index) => ({
                             oid: this.oidConvert(index),
@@ -218,6 +312,9 @@ export class synchronizer {
                 case "A2":
                     quiz = {
                         type: "A2",
+                        class: quizdata.cls,
+                        unit: quizdata.unit,
+                        tags: [],
                         question: quizdata.test,
                         options: quizdata.option.map((value, index) => ({
                             oid: this.oidConvert(index),
@@ -244,6 +341,9 @@ export class synchronizer {
                 case "X":
                     quiz = {
                         type: "X",
+                        class: quizdata.cls,
+                        unit: quizdata.unit,
+                        tags: [],
                         question: quizdata.test,
                         options: quizdata.option.map((value, index) => ({
                             oid: this.oidConvert(index),
